@@ -151,24 +151,17 @@ class RigidBody {
     }
     move() {
         const Logs = this.getLogMap();
-        this.onDrawLogsCallback = [];
-        // add acceleration to velocity
-        vec2.add(this.velocity, this.velocity, this.acceleration);
-        // add veloctity to translation
-        vec2.add(this.translation, this.translation, this.velocity);
-        // get the sibling with colliding bounding box with current RigidBody's id and map it with world.children to retrieve their Object
-        // const probablyColidingSiblings = this.getBBCollidingSiblings().map(
-        //     (v) => this.world.childrens.get(v)
-        // ) as RigidBody[];
-        const probablyColidingSiblings = Array.from(this.world.childrens.values());
-        // get the model verticies (with scale rotation and translation applied)
+        this.onDrawLogsCallback = [];  // add acceleration to velocity
+        vec2.add(this.velocity, this.velocity, this.acceleration);  // add veloctity to translation
+        vec2.add(this.translation, this.translation, this.velocity);  // get the sibling with colliding bounding box with current RigidBody's id and map it with world.children to retrieve their Object
+        const probablyColidingSiblings = this.getBBCollidingSiblings().map(
+            (v) => this.world.childrens.get(v)
+        ) as RigidBody[];  // get the model verticies (with scale rotation and translation applied)
         const transformedVerticies = this.getTransformedVerticies(true);
-        // explicit
+
         let colliding = false;
         for (let o of probablyColidingSiblings) {
-            const siblingsTransformedVerticies = o.getTransformedVerticies(
-                true
-            );
+            const siblingsTransformedVerticies = o.getTransformedVerticies(true);
             // string here to avoid any kind of weird number comparison with floating point bs
             const satAxis = new Set<string>();
             const triangleVerticiesToAxis = (verts: [vec2, vec2, vec2]) => {
@@ -187,7 +180,13 @@ class RigidBody {
                 normals[0] = nrml(normals[0]);
                 normals[1] = nrml(normals[1]);
                 normals[2] = nrml(normals[2]);
-                normals.map((v) => v.join(":")).forEach((v) => satAxis.add(v));
+                // turn normals into [string, string][] (first the string representation of the axis, then the negated one) and for each it to add to satAxis
+                normals.map(v => [v, vec2.negate(vec2.create(), v)]).map((v) => v.map(n => n.join(":"))).forEach((v) => {
+                    // if satAxis doesn't contain the axis or its negated version
+                    if(!satAxis.has(v[0]) && !satAxis.has(v[1])) {
+                        satAxis.add(v[0]);
+                    }
+                });
             };
             for (let t of this.triangles) {
                 const verts: [vec2, vec2, vec2] = [
@@ -206,10 +205,6 @@ class RigidBody {
                 triangleVerticiesToAxis(verts);
             }
             colliding = true;
-            const sa = new Map<
-                string,
-                { amin: number; amax: number; bmin: number; bmax: number }
-            >();
             for (let axisString of satAxis) {
                 const axis = axisString
                     .split(":")
@@ -231,114 +226,9 @@ class RigidBody {
                     (siblingMin > thisMin && siblingMin < thisMax) ||
                     (siblingMax > thisMin && siblingMax < thisMax);
                 if (!axisColliding) {
-                    sa.set(vec2.str(axis), {
-                        amax: thisMax,
-                        amin: thisMin,
-                        bmax: siblingMax,
-                        bmin: siblingMin,
-                    });
                     colliding = false;
                     break;
                 }
-            }
-            for (let axisString of satAxis) {
-                const axis = axisString
-                    .split(":")
-                    .map((v) => parseFloat(v)) as N2;
-
-                const viewv = this.getTransformedVerticies(false);
-                const centroid = [
-                    viewv.map((v) => v[0]).reduce((p, v) => p + v) /
-                        viewv.length,
-                    viewv.map((v) => v[1]).reduce((p, v) => p + v) /
-                        viewv.length,
-                ];
-                const axisMountPoint = vec2.create();
-                // vec2.multiply(axisMountPoint, axis.reverse() as N2, [-1, 1])
-                // vec2.normalize(axisMountPoint, axisMountPoint);
-                // vec2.multiply(axisMountPoint, axisMountPoint, [200, 200]);
-                // vec2.add(axisMountPoint, vec2.multiply(vec2.create(), axis, [-50, -50]), axisMountPoint);
-                vec2.add(axisMountPoint, axisMountPoint, centroid as N2);
-                const axisEndPoint = vec2.create();
-                vec2.add(
-                    axisEndPoint,
-                    axisMountPoint,
-                    vec2.multiply(vec2.create(), axis, [100, 100])
-                );
-                this.onDrawLogsCallback.push((ctx) => {
-                    ctx.beginPath();
-                    ctx.fillStyle = "black";
-                    ctx.arc(centroid[0], centroid[1], 10, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.closePath();
-                    const origin = vec2.create();
-                    vec2.transformMat3(origin, origin, this.world.viewMatrix);
-                    if (sa.has(vec2.str(axis))) {
-                        const s = sa.get(vec2.str(axis)) as { amin: number; amax: number; bmin: number; bmax: number };
-                        ctx.strokeStyle = "red";
-                        ctx.lineWidth = 3;
-                        ctx.beginPath();
-                        ctx.moveTo(
-                            ...(vec2.add(
-                                vec2.create(),
-                                origin,
-                                vec2.multiply(vec2.create(), axis, [
-                                    -4000,
-                                    -4000,
-                                ])
-                            ) as N2)
-                        );
-                        ctx.lineTo(
-                            ...(vec2.add(
-                                vec2.create(),
-                                origin,
-                                vec2.multiply(vec2.create(), axis, [4000, 4000])
-                            ) as N2)
-                        );
-                        const d = {
-                            amax: vec2.add(vec2.create(), origin, vec2.multiply(vec2.create(), axis, [s.amax, s.amax])),
-                            amin: vec2.add(vec2.create(), origin, vec2.multiply(vec2.create(), axis, [s.amin, s.amin])),
-                            bmax: vec2.add(vec2.create(), origin, vec2.multiply(vec2.create(), axis, [s.bmax, s.bmax])),
-                            bmin: vec2.add(vec2.create(), origin, vec2.multiply(vec2.create(), axis, [s.bmin, s.bmin])),
-                        }
-                        ctx.stroke();
-                        ctx.closePath();
-                        ctx.beginPath();
-                        ctx.fillStyle = this.color.darker(80).value;
-                        ctx.arc(d.amax[0], d.amax[1], 10, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.closePath();
-                        ctx.beginPath();
-                        ctx.arc(d.amin[0], d.amin[1], 10, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.closePath();
-                        ctx.beginPath();
-                        ctx.fillStyle = o.color.darker(80).value;
-                        ctx.arc(d.bmax[0], d.bmax[1], 10, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.closePath();
-                        ctx.beginPath();
-                        ctx.arc(d.bmin[0], d.bmin[1], 10, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.closePath();
-                    }
-                    {
-                        ctx.strokeStyle = sa.has(vec2.str(axis))
-                            ? "red"
-                            : "white";
-                        ctx.lineWidth = 3;
-                        ctx.beginPath();
-                        ctx.moveTo(...(axisMountPoint as N2));
-                        ctx.lineTo(...(axisEndPoint as N2));
-                        ctx.stroke();
-                        ctx.closePath();
-                    }
-                    ctx.beginPath();
-                    ctx.fillStyle = "red";
-                    ctx.arc(origin[0], origin[1], 10, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.closePath();
-                });
             }
         }
         if (colliding) this.color = this.color.to(rgb.randomHue(), 5);
